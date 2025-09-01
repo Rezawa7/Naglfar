@@ -1,5 +1,5 @@
 using UnityEngine;
-using UnityEngine.InputSystem;  // ← new Input System namespace
+using UnityEngine.InputSystem;
 
 public class ShipController : MonoBehaviour
 {
@@ -20,29 +20,34 @@ public class ShipController : MonoBehaviour
     public Camera mainCam;
     public Camera cannonLeftCam;
     public Camera cannonRightCam;
+    public Vector3 cameraOffset = new Vector3(0f, 3f, -15f);
+    public float cameraFollowSpeed = 5f;
+    public float cameraRotateSpeed = 5f;
 
     // runtime state
     float currentSpeed = 0f;
     float yawAngle     = 0f;
     float rollAngle    = 0f;
 
+    Vector3 camVelocity; // smoothdamp velocity
+
     void Update()
     {
         var kb = Keyboard.current;
         if (kb == null)
-            return; // no keyboard connected
+            return;
 
         // ─── INPUT ───────────────────────────────────────
         float inpF = 0f;
-        if (kb.wKey.isPressed)   inpF = +1f;
+        if (kb.wKey.isPressed) inpF = +1f;
         if (kb.sKey.isPressed) inpF = -1f;
 
         float inpT = 0f;
         if (kb.dKey.isPressed) inpT = +1f;
-        if (kb.aKey.isPressed)  inpT = -1f;
+        if (kb.aKey.isPressed) inpT = -1f;
 
-        // ─── SPEED CONTROL ────────────────────────────────
-        if (inpF >  0f)
+        // ─── SPEED CONTROL ───────────────────────────────
+        if (inpF > 0f)
             currentSpeed += acceleration * Time.deltaTime;
         else if (inpF < 0f)
             currentSpeed -= deceleration * Time.deltaTime;
@@ -51,31 +56,58 @@ public class ShipController : MonoBehaviour
 
         currentSpeed = Mathf.Clamp(currentSpeed, 0f, maxSpeed);
 
-        // ─── YAW (HEADING) ────────────────────────────────
+        // ─── YAW (HEADING) ───────────────────────────────
         yawAngle += inpT * turnSpeed * Time.deltaTime;
 
-        // ─── ROLL (BANK) ──────────────────────────────────
+        // ─── ROLL (BANK) ─────────────────────────────────
         float targetRoll = -inpT * maxRollAngle;
         rollAngle = Mathf.Lerp(rollAngle, targetRoll, Time.deltaTime * rollSpeed);
 
-        // ─── APPLY ROTATION ───────────────────────────────
+        // ─── APPLY ROTATION ──────────────────────────────
         Quaternion yawQ  = Quaternion.Euler(0f, yawAngle, 0f);
         Quaternion rollQ = Quaternion.Euler(0f, 0f, rollAngle);
         transform.rotation = yawQ * rollQ;
 
-        // ─── MOVE WITH DRIFT ──────────────────────────────
+        // ─── MOVE WITH DRIFT ─────────────────────────────
         Vector3 forwardMove = transform.forward * currentSpeed;
         Vector3 driftMove   = transform.right   * currentSpeed * inpT * driftFactor;
         transform.position += (forwardMove + driftMove) * Time.deltaTime;
 
-        // Camera switch
+        // ─── CAMERA FOLLOW ───────────────────────────────
+        if (mainCam != null)
+        {
+            // only yaw for camera
+            Quaternion yawOnly = Quaternion.Euler(0f, yawAngle, 0f);
+            Vector3 desiredPos = transform.position + yawOnly * cameraOffset;
+
+            mainCam.transform.position = Vector3.SmoothDamp(
+                mainCam.transform.position, 
+                desiredPos, 
+                ref camVelocity, 
+                1f / cameraFollowSpeed
+            );
+
+            // Look at ship but keep level
+            Vector3 lookDir = transform.position - mainCam.transform.position;
+            lookDir.y = 0f;
+            if (lookDir.sqrMagnitude > 0.001f)
+            {
+                Quaternion targetRot = Quaternion.LookRotation(lookDir, Vector3.up);
+                mainCam.transform.rotation = Quaternion.Slerp(
+                    mainCam.transform.rotation, 
+                    targetRot, 
+                    cameraRotateSpeed * Time.deltaTime
+                );
+            }
+        }
+
+        // ─── CAMERA SWITCHING ────────────────────────────
         if (kb.qKey.isPressed)
             SetCamera(cannonLeftCam);
         else if (kb.eKey.isPressed)
             SetCamera(cannonRightCam);
         else
             SetCamera(mainCam);
-
     }
 
     private void SetCamera(Camera active)

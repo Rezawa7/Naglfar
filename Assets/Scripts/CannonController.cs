@@ -176,12 +176,33 @@ public class CannonController : MonoBehaviour
 
         Ray ray = new Ray(start, direction);
 
+        // Collect all my own colliders (boat + shield + cannon etc.)
+        Collider[] myColliders = GetComponentsInChildren<Collider>(true);
+
         if (Physics.Raycast(ray, out RaycastHit hit, laserRange))
         {
+            // If we hit ourselves, skip this hit
+            if (myColliders.Contains(hit.collider))
+            {
+                // Try again but ignore our own colliders
+                if (Physics.Raycast(ray, out RaycastHit hit2, laserRange, ~0, QueryTriggerInteraction.Ignore))
+                {
+                    if (!myColliders.Contains(hit2.collider))
+                    {
+                        hit = hit2;
+                    }
+                    else
+                    {
+                        return; // only hit ourselves, abort
+                    }
+                }
+            }
+
             end = hit.point;
 
+            // Damage only if it's not us
             Health hp = hit.collider.GetComponent<Health>();
-            if (hp != null)
+            if (hp != null && !myColliders.Contains(hit.collider))
                 hp.TakeDamage(laserDamage);
 
             if (laserImpactEffect != null)
@@ -192,6 +213,7 @@ public class CannonController : MonoBehaviour
             }
         }
 
+        // Draw beam
         if (laserBeamPrefab != null)
         {
             GameObject beam = Instantiate(laserBeamPrefab);
@@ -201,7 +223,6 @@ public class CannonController : MonoBehaviour
                 lr.SetPosition(0, start);
                 lr.SetPosition(1, end);
             }
-
             Destroy(beam, 0.2f);
         }
 
@@ -220,6 +241,31 @@ public class CannonController : MonoBehaviour
 
         GameObject shield = Instantiate(shieldPrefab, spawnPos, spawnRot);
 
+        // Stick to the boat
+        shield.transform.SetParent(this.transform);
+
+        // Setup health
+        Health hp = shield.GetComponent<Health>();
+        if (hp == null)
+            hp = shield.AddComponent<Health>();
+
+        hp.maxHealth = 50f;
+        hp.currentHealth = 50f;
+
+        // Destroy after 20s max
+        Destroy(shield, 5f);
+
+        // Ignore collisions with own projectiles
+        Collider[] myColliders = GetComponentsInChildren<Collider>();
+        Collider[] shieldColliders = shield.GetComponentsInChildren<Collider>();
+
+        foreach (var myCol in myColliders)
+        {
+            foreach (var shieldCol in shieldColliders)
+            {
+                Physics.IgnoreCollision(myCol, shieldCol);
+            }
+        }
     }
 
     GameObject Launch(Vector3 position, GameObject prefab, float force, float launchAngle, float damage = 25f)
@@ -228,10 +274,17 @@ public class CannonController : MonoBehaviour
         GameObject projectile = Instantiate(prefab, spawnPos, Quaternion.identity);
 
 
-        Collider myCol = GetComponent<Collider>();
-        Collider projCol = projectile.GetComponent<Collider>();
-        if (myCol && projCol)
-            Physics.IgnoreCollision(myCol, projCol);
+        Collider[] myCols = GetComponentsInChildren<Collider>(true);
+        Collider[] projCols = projectile.GetComponentsInChildren<Collider>(true);
+
+        foreach (var myCol in myCols)
+        {
+            foreach (var projCol in projCols)
+            {
+                if (myCol && projCol)
+                    Physics.IgnoreCollision(myCol, projCol);
+            }
+        }
 
         // Launch
         Rigidbody rb = projectile.GetComponent<Rigidbody>();
